@@ -4,7 +4,10 @@ GHL's Contacts Smart List truncates column headers with ellipsis and provides no
 
 ## Before & After
 
-> Screenshots coming soon
+> ![Before auto-fit](./images/before.png)
+> ![After auto-fit](./images/after.png)
+
+Note: With a lot of fields the scroll bar will used to view all of the fields. A handy way to scroll without clicking and grabbing the bar is to press and hold the Shift key and then use the mouse button scroll wheel to scroll sideways.
 
 ## Installation
 
