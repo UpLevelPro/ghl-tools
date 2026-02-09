@@ -1,6 +1,15 @@
 # Smart List Column Auto-Fit
 
-GHL's Contacts Smart List truncates column headers with ellipsis and provides no way to save resized columns. This script automatically fits every column to show full header names and cell content.
+I was frustrated that GHL's Contacts Smart List truncates column headers and provides no way to save resized columns. 
+
+This script automatically fits every column to show full header names and cell content. 
+
+If you found this helpful, let me know at eric@uplevelpro.com 
+
+You must be an agency owner to use this script, not a subaccount in an agency. 
+If you don't have a GHL agency account yet, click here to get a free trial: https://www.gohighlevel.com/?fp_ref=uplevelpro32
+
+I'm also available for GHL or AI-based custom projects.
 
 ## Before & After
 
