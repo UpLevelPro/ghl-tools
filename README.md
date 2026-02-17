@@ -1,6 +1,6 @@
 # GHL Tools
 
-Free, open-source scripts and utilities to enhance your [HighLevel (GHL)](https://www.gohighlevel.com/) agency.
+Free, open-source scripts and utilities to enhance your [HighLevel (GHL)]([https://www.gohighlevel.com/](https://www.gohighlevel.com/?fp_ref=uplevelpro32)) agency.
 
 ## Tools
 
