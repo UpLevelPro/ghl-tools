@@ -7,6 +7,7 @@ Free, open-source scripts and utilities to enhance your [HighLevel (GHL)](https:
 | Tool | Description | Status |
 |------|-------------|--------|
 | [Smart List Column Auto-Fit](./smartlist-autofit-columns/) | Auto-sizes table columns on Contacts Smart List pages so headers and content are fully visible | Stable |
+| [Auto-Open Phone Keypad](./auto-open-phone-keypad/) | Automatically opens the phone keypad when making calls so you can access call controls instantly | Beta |
 
 Each tool has its own folder with a dedicated README containing installation instructions, configuration options, and usage details.
 
