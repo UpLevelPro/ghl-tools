@@ -106,18 +106,8 @@
 
     var style = document.createElement('style');
     style.id = 'ghl-cps-styles';
-    style.textContent = [
-      '.mt-3[data-cps-hidden="true"] { display: none !important; }',
-      '#ghl-cps-recurring-section .ghl-cps-link {',
-      '  display: flex; align-items: center; justify-content: center; gap: 6px;',
-      '  padding: 10px 12px; color: #155EEF; font-size: 13px; font-weight: 500;',
-      '  text-decoration: none; cursor: pointer; border-radius: 4px;',
-      '  transition: background-color 0.15s;',
-      '}',
-      '#ghl-cps-recurring-section .ghl-cps-link:hover {',
-      '  background-color: rgba(21, 94, 239, 0.06);',
-      '}'
-    ].join('\n');
+    style.textContent =
+      '.mt-3[data-cps-hidden="true"] { display: none !important; }';
     document.head.appendChild(style);
     log('Styles injected');
   }
@@ -159,6 +149,8 @@
 
   // ---------------------------------------------------------------------------
   // Contact detail page: reorder visible sections
+  // Only moves DOM nodes when the order is actually wrong to avoid
+  // triggering an infinite MutationObserver loop.
   // ---------------------------------------------------------------------------
 
   function reorderSections() {
@@ -170,20 +162,33 @@
     var statsRow = parent.querySelector('.grid.grid-cols-2');
     if (!statsRow) return;
 
-    // Our injected section goes right after the stats row
+    // Build the desired order of elements: recurring section first, then SECTION_ORDER
+    var desired = [];
     var recurringSection = document.getElementById('ghl-cps-recurring-section');
-    if (recurringSection) {
-      parent.insertBefore(recurringSection, statsRow.nextElementSibling);
-    }
-
-    // Then reorder native sections per SECTION_ORDER
-    var insertAfter = recurringSection || statsRow;
+    if (recurringSection) desired.push(recurringSection);
     for (var i = 0; i < CONFIG.SECTION_ORDER.length; i++) {
       var section = findSectionByName(CONFIG.SECTION_ORDER[i]);
-      if (section && !section.dataset.cpsHidden) {
-        parent.insertBefore(section, insertAfter.nextElementSibling);
-        insertAfter = section;
+      if (section && !section.dataset.cpsHidden) desired.push(section);
+    }
+    if (!desired.length) return;
+
+    // Check if sections are already in the correct order after statsRow
+    var currentNode = statsRow.nextElementSibling;
+    var alreadyCorrect = true;
+    for (var j = 0; j < desired.length; j++) {
+      if (currentNode !== desired[j]) {
+        alreadyCorrect = false;
+        break;
       }
+      currentNode = currentNode.nextElementSibling;
+    }
+    if (alreadyCorrect) return;
+
+    // Actually reorder
+    var insertAfter = statsRow;
+    for (var k = 0; k < desired.length; k++) {
+      parent.insertBefore(desired[k], insertAfter.nextElementSibling);
+      insertAfter = desired[k];
     }
 
     log('Sections reordered');
@@ -195,17 +200,17 @@
 
   var EXTERNAL_LINK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true" class="h-4 w-4 text-gray-900"><path stroke-linecap="round" stroke-linejoin="round" d="M21 9V3m0 0h-6m6 0l-9 9m-2-9H7.8c-1.68 0-2.52 0-3.162.327a3 3 0 00-1.311 1.311C3 5.28 3 6.12 3 7.8v8.4c0 1.68 0 2.52.327 3.162a3 3 0 001.311 1.311C5.28 21 6.12 21 7.8 21h8.4c1.68 0 2.52 0 3.162-.327a3 3 0 001.311-1.311C21 18.72 21 17.88 21 16.2V14"></path></svg>';
 
-  var LINK_ARROW_SVG = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:14px;height:14px;"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>';
-
-  function createRecurringSection() {
+  function getRecurringLink() {
     var locationId = getLocationIdFromUrl();
-    var lastName = getContactLastName();
-
     var linkHref = '/v2/location/' + locationId + '/payments/recurring-templates';
+    var lastName = getContactLastName();
     if (lastName) {
       linkHref += '#search=' + encodeURIComponent(lastName);
     }
+    return linkHref;
+  }
 
+  function createRecurringSection() {
     var section = document.createElement('div');
     section.className = 'mt-3';
     section.id = 'ghl-cps-recurring-section';
@@ -218,17 +223,20 @@
               '<p class="text-black hl-text-sm-medium">Recurring Invoices</p>' +
             '</div>' +
             '<div class="filter-bar--right">' +
-              '<a class="cursor-pointer" href="' + linkHref + '" target="_blank" rel="noopener">' +
+              '<a class="cursor-pointer ghl-cps-icon-link" target="_blank" rel="noopener">' +
                 EXTERNAL_LINK_SVG +
               '</a>' +
             '</div>' +
           '</div>' +
         '</div>' +
-        '<a class="ghl-cps-link" href="' + linkHref + '" target="_blank" rel="noopener">' +
-          LINK_ARROW_SVG +
-          ' View Recurring Invoices' +
-        '</a>' +
       '</div>';
+
+    // Build href dynamically at click time so the last name is always current
+    var iconLink = section.querySelector('.ghl-cps-icon-link');
+    iconLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      window.open(getRecurringLink(), '_blank', 'noopener');
+    });
 
     return section;
   }
@@ -260,16 +268,15 @@
       return;
     }
 
-    // Always re-apply hiding (GHL may re-render the sidebar)
+    // Wait for sidebar to render
+    if (!findSectionByName('Transactions')) {
+      log('Payments sidebar not ready yet');
+      return;
+    }
+
     hideUnusedSections();
 
     if (CONFIG.SHOW_RECURRING_LINK && !document.getElementById('ghl-cps-recurring-section')) {
-      // Wait for sidebar to render
-      if (!findSectionByName('Transactions')) {
-        log('Payments sidebar not ready yet');
-        return;
-      }
-
       injectStyles();
 
       var section = createRecurringSection();
@@ -353,12 +360,7 @@
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(function() {
         if (isContactDetailPage()) {
-          hideUnusedSections();
-          if (!document.getElementById('ghl-cps-recurring-section')) {
-            applyContactPage();
-          } else {
-            reorderSections();
-          }
+          applyContactPage();
         }
       }, 300);
     });
