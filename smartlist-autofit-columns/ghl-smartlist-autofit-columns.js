@@ -1,7 +1,10 @@
-<!-- GHL Smart List Column Auto-Fit by Eric Langley - UpLevelPro.com -->
+<!-- GHL Smart List Column Auto-Fit v2.0.0 by Eric Langley - UpLevelPro.com
+     https://github.com/UpLevelPro/ghl-tools/tree/main/smartlist-autofit-columns -->
 <script>
 (function() {
   'use strict';
+
+  const VERSION = '2.0.0';
 
   const CONFIG = {
     SMART_LIST_PATTERN: /\/v2\/location\/[^/]+\/contacts\/smart_list\//,
@@ -388,7 +391,7 @@
   // ---------------------------------------------------------------------------
 
   function bootstrap() {
-    log('Script loaded (v2.0)');
+    log('Script loaded (v' + VERSION + ')');
 
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', function() {
@@ -407,4 +410,4 @@
 
 })();
 </script>
-<!-- End - GHL Smart List Column Auto-Fit by Eric Langley - UpLevelPro.com -->
+<!-- End - GHL Smart List Column Auto-Fit v2.0.0 by Eric Langley - UpLevelPro.com -->
