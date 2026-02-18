@@ -27,6 +27,7 @@
 
     // Allowed Location IDs. Script only runs for these sub-accounts.
     // Set to [] to allow ALL locations in the agency.
+    // Quotes are required around each ID, e.g. ['abc123', 'def456']
     ALLOWED_LOCATION_IDS: [],
 
     DEBUG: true
