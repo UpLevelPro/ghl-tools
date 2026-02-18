@@ -8,6 +8,7 @@ Free, open-source scripts and utilities to enhance your [HighLevel (GHL)](https:
 |------|-------------|--------|
 | [Smart List Column Auto-Fit](./smartlist-autofit-columns/) | Auto-sizes table columns on Contacts Smart List pages so headers and content are fully visible | Stable |
 | [Auto-Open Phone Keypad](./auto-open-phone-keypad/) | Automatically opens the phone keypad when making calls so you can access call controls instantly | Stable |
+| [Custom Payments Sidebar](./custom-payments-sidebar/) | Customizes the Payments sidebar on contact pages — hide unused sections, reorder the rest, and add a Recurring Invoices link | Stable |
 
 Each tool has its own folder with a dedicated README containing installation instructions, configuration options, and usage details.
 
