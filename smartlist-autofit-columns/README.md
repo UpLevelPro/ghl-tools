@@ -47,15 +47,21 @@ The script includes a `CONFIG` object at the top that you can adjust:
 | `SAMPLE_ROWS` | `15` | Number of visible rows sampled to determine cell content width |
 | `POLL_INTERVAL` | `300` | Milliseconds between checks while waiting for the table to render |
 | `POLL_TIMEOUT` | `8000` | Maximum milliseconds to wait for the table before giving up |
+| `DEBOUNCE_MS` | `300` | Debounce delay for MutationObserver before re-applying widths |
+| `RETRY_DELAY` | `250` | Milliseconds between retry checks after applying widths |
+| `MAX_RETRIES` | `3` | Maximum retry attempts if Tabulator overwrites applied widths |
+| `STABILITY_CHECKS` | `2` | Consecutive polls with the same row count required before the table is considered ready |
 | `DEBUG` | `true` | Set to `false` to disable `[SmartList AutoFit]` console logging |
 
 ## How It Works
 
-1. **SPA Navigation Detection** — Hooks into `history.pushState`, `history.replaceState`, and `popstate` events to detect page changes within GHL's single-page app
-2. **Table Detection** — Polls for Tabulator.js table elements (`.tabulator-col` headers and `.tabulator-row` rows) until they render
+1. **SPA Navigation Detection** — Listens for GHL's `routeChangeEvent` and `routeLoaded` custom events, with `history.pushState`/`replaceState`/`popstate` hooks as fallback
+2. **Table Detection** — Polls for Tabulator.js table elements until they render, with a stability check requiring consistent row counts across consecutive polls before proceeding
 3. **Text Measurement** — Creates an offscreen `<span>` with the same font as each header/cell, measures its pixel width, and determines the optimal column width
-4. **Width Application** — Sets `style.width` on both `.tabulator-col` (header) and `.tabulator-cell` (body) elements for each field
+4. **Width Application** — Sets `style.width` on both `.tabulator-col` (header) and `.tabulator-cell` (body) elements for each field, using `requestAnimationFrame` to run after the browser's layout pass
 5. **MutationObserver** — Watches `#table-container` for DOM changes. When rows change (sort/filter), it re-applies stored widths. When column structure changes (Manage Fields), it re-measures everything
+6. **Retry Mechanism** — After applying widths, verifies they weren't overwritten by Tabulator's async re-render and retries if needed (up to `MAX_RETRIES` times)
+7. **Store Events** — If GHL's `AppUtils.StoreEvents` API is available (marketplace apps), subscribes to relevant store modules for additional re-render triggers
 
 ## Compatibility
 

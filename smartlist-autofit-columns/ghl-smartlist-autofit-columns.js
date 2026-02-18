@@ -12,6 +12,10 @@
     HEADER_PADDING: 60,  // extra px for sort icon + breathing room
     CELL_PADDING: 30,
     SAMPLE_ROWS: 15,
+    DEBOUNCE_MS: 300,    // debounce for MutationObserver (was 100)
+    RETRY_DELAY: 250,    // ms between retry checks after applying widths
+    MAX_RETRIES: 3,      // max times to re-apply if Tabulator overwrites
+    STABILITY_CHECKS: 2, // consecutive polls with same row count before table is "ready"
     DEBUG: true
   };
 
@@ -19,6 +23,7 @@
   let columnWidths = {};       // field -> width in px (persists across re-renders)
   let columnFingerprint = '';  // ordered field list to detect column structure changes
   let tableObserver = null;    // MutationObserver for row/column changes
+  let storeSubscriptionId = null; // StoreEvents subscription ID
 
   // ---------------------------------------------------------------------------
   // Logging
@@ -132,6 +137,66 @@
       });
     });
     if (applied > 0) log('Re-applied widths to', applied, 'elements');
+    return applied;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Check if Tabulator has overwritten our stored widths
+  // ---------------------------------------------------------------------------
+
+  function widthsWereOverwritten() {
+    var fields = Object.keys(columnWidths);
+    for (var i = 0; i < fields.length; i++) {
+      var field = fields[i];
+      var widthPx = columnWidths[field] + 'px';
+      var header = document.querySelector('.tabulator-col[tabulator-field="' + field + '"]');
+      if (header && header.style.width !== widthPx) return true;
+      var cell = document.querySelector('.tabulator-cell[tabulator-field="' + field + '"]');
+      if (cell && cell.style.width !== widthPx) return true;
+    }
+    return false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Apply widths with RAF + retry to survive Tabulator's async re-render
+  // ---------------------------------------------------------------------------
+
+  function applyWidthsWithRetry(retriesLeft) {
+    if (typeof retriesLeft === 'undefined') retriesLeft = CONFIG.MAX_RETRIES;
+
+    requestAnimationFrame(function() {
+      applyStoredWidths();
+
+      if (retriesLeft > 0) {
+        setTimeout(function() {
+          if (widthsWereOverwritten()) {
+            log('Widths were overwritten, retrying... (' + retriesLeft + ' left)');
+            applyWidthsWithRetry(retriesLeft - 1);
+          }
+        }, CONFIG.RETRY_DELAY);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auto-fit with RAF + retry (for full re-measure after structure changes)
+  // ---------------------------------------------------------------------------
+
+  function autoFitWithRetry(retriesLeft) {
+    if (typeof retriesLeft === 'undefined') retriesLeft = CONFIG.MAX_RETRIES;
+
+    requestAnimationFrame(function() {
+      autoFitColumns();
+
+      if (retriesLeft > 0) {
+        setTimeout(function() {
+          if (widthsWereOverwritten()) {
+            log('Widths overwritten after auto-fit, retrying... (' + retriesLeft + ' left)');
+            autoFitWithRetry(retriesLeft - 1);
+          }
+        }, CONFIG.RETRY_DELAY);
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -157,11 +222,11 @@
         if (currentFP !== columnFingerprint) {
           log('Column structure changed, re-fitting...');
           columnWidths = {};
-          autoFitColumns();
+          autoFitWithRetry();
         } else {
-          applyStoredWidths();
+          applyWidthsWithRetry();
         }
-      }, 100);
+      }, CONFIG.DEBOUNCE_MS);
     });
 
     tableObserver.observe(container, { childList: true, subtree: true });
@@ -176,11 +241,13 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Poll until table renders, then auto-fit
+  // Poll until table renders with stability check, then auto-fit
   // ---------------------------------------------------------------------------
 
   function waitAndAutoFit() {
     var elapsed = 0;
+    var stableCount = 0;
+    var lastRowCount = -1;
 
     var timer = setInterval(function() {
       elapsed += CONFIG.POLL_INTERVAL;
@@ -189,15 +256,40 @@
       var rows = document.querySelectorAll('.tabulator-row');
 
       if (headers.length > 0 && rows.length > 0) {
-        clearInterval(timer);
-        log('Table detected (' + headers.length + ' cols, ' + rows.length + ' rows) after ' + elapsed + 'ms');
-        autoFitColumns();
-        return;
+        // Check that at least some cells have actual content (not just placeholders)
+        var cells = document.querySelectorAll('.tabulator-cell');
+        var hasContent = false;
+        for (var i = 0; i < Math.min(cells.length, 10); i++) {
+          if (cells[i].textContent.trim()) { hasContent = true; break; }
+        }
+
+        if (hasContent) {
+          // Stability check: row count must match across consecutive polls
+          if (rows.length === lastRowCount) {
+            stableCount++;
+          } else {
+            stableCount = 1;
+            lastRowCount = rows.length;
+          }
+
+          if (stableCount >= CONFIG.STABILITY_CHECKS) {
+            clearInterval(timer);
+            log('Table stable (' + headers.length + ' cols, ' + rows.length + ' rows) after ' + elapsed + 'ms');
+            autoFitWithRetry();
+            return;
+          }
+        }
       }
 
       if (elapsed >= CONFIG.POLL_TIMEOUT) {
         clearInterval(timer);
-        log('Timeout waiting for table to render');
+        // Last-ditch attempt: if table exists but stability wasn't reached, try anyway
+        if (headers && headers.length > 0 && rows && rows.length > 0) {
+          log('Stability timeout, attempting auto-fit anyway...');
+          autoFitWithRetry();
+        } else {
+          log('Timeout waiting for table to render');
+        }
       }
     }, CONFIG.POLL_INTERVAL);
   }
@@ -225,28 +317,70 @@
   }
 
   // ---------------------------------------------------------------------------
-  // SPA navigation hooks
+  // SPA navigation hooks (primary: GHL events, fallback: history monkey-patch)
   // ---------------------------------------------------------------------------
 
   function setupNavigationWatcher() {
-    // pushState
+    // Primary: GHL Custom JS route events (available in whitelabel & marketplace)
+    try {
+      window.addEventListener('routeLoaded', function() {
+        log('routeLoaded event fired');
+        setTimeout(onNavigate, 150);
+      });
+      window.addEventListener('routeChangeEvent', function() {
+        log('routeChangeEvent fired');
+        setTimeout(onNavigate, 150);
+      });
+      log('GHL route event listeners registered');
+    } catch (e) {
+      log('GHL route events not available:', e.message);
+    }
+
+    // Fallback: pushState / replaceState monkey-patch
     var origPush = history.pushState;
     history.pushState = function() {
       origPush.apply(this, arguments);
       setTimeout(onNavigate, 150);
     };
 
-    // replaceState
     var origReplace = history.replaceState;
     history.replaceState = function() {
       origReplace.apply(this, arguments);
       setTimeout(onNavigate, 150);
     };
 
-    // back/forward
+    // Fallback: back/forward
     window.addEventListener('popstate', function() {
       setTimeout(onNavigate, 150);
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Progressive enhancement: Vue3 Store Events (if AppUtils is available)
+  // ---------------------------------------------------------------------------
+
+  function tryRegisterStoreEvents() {
+    try {
+      if (!window.AppUtils || !window.AppUtils.StoreEvents || !window.AppUtils.StoreEvents.register) {
+        log('AppUtils.StoreEvents not available (expected in whitelabel context)');
+        return;
+      }
+
+      // Subscribe to store modules that may trigger Smart List re-renders
+      storeSubscriptionId = window.AppUtils.StoreEvents.register(
+        ['customObjectsStore', 'locationCustomFields'],
+        function(payload) {
+          if (!isSmartListPage()) return;
+          if (!Object.keys(columnWidths).length) return; // not yet initialized
+
+          log('Store mutation detected:', payload.module, payload.mutation && payload.mutation.type);
+          applyWidthsWithRetry();
+        }
+      );
+      log('StoreEvents subscription registered (id: ' + storeSubscriptionId + ')');
+    } catch (e) {
+      log('StoreEvents registration failed (non-critical):', e.message);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -254,15 +388,17 @@
   // ---------------------------------------------------------------------------
 
   function bootstrap() {
-    log('Script loaded');
+    log('Script loaded (v2.0)');
 
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', function() {
         setupNavigationWatcher();
+        tryRegisterStoreEvents();
         onNavigate();
       });
     } else {
       setupNavigationWatcher();
+      tryRegisterStoreEvents();
       onNavigate();
     }
   }
