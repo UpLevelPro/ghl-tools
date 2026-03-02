@@ -44,7 +44,7 @@ The script includes a `CONFIG` object at the top that you can adjust:
 1. **Store Event Listener** — Registers for `phoneCall` state changes via `AppUtils.StoreEvents` (GHL's built-in Custom JS API). When the phone call state changes, it checks if the collapsed call bar has appeared
 2. **DOM Observer (Fallback)** — A MutationObserver watches `#template-power-dialer` for child element changes. When `.call-box` (the collapsed call bar) is inserted, it triggers the auto-expand
 3. **Auto-Click** — After a short delay (configurable), the script finds the dropdown chevron inside `.call-actions` and programmatically clicks it, expanding the full dialer panel
-4. **Guard Flag** — A flag prevents the script from re-clicking if the panel is already expanded. The flag resets when `.call-box` is removed from the DOM (call ended or panel already open), so the next call is handled fresh
+4. **Guard Flag** — A flag prevents the script from re-clicking if the panel is already expanded. The flag resets only after `.call-box` has been absent from the DOM for 1.5 seconds (confirming the call truly ended), so users can freely minimize the keypad during a call without it popping back open
 
 ## Compatibility
 
@@ -52,6 +52,14 @@ The script includes a `CONFIG` object at the top that you can adjust:
 - Works on any page where outbound calls can be initiated (Contact Detail, Conversations, etc.)
 - No external dependencies — pure vanilla JavaScript
 - No CSS required
+
+## Changelog
+
+### v1.1 — 2026-03-02
+- **Fix:** Keypad can no longer get stuck re-opening after the user minimizes it. The script now waits 1.5s to confirm the call truly ended before resetting, preventing DOM flicker during minimize from triggering a re-expand.
+
+### v1.0
+- Initial release — auto-opens the phone keypad when an outbound call starts.
 
 ## Author
 

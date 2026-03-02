@@ -13,6 +13,7 @@
 
   let hasExpanded = false;  // guard: true once we've auto-clicked for this call
   let observer = null;
+  let callEndTimer = null;  // delayed reset to avoid false resets during minimize
 
   // ---------------------------------------------------------------------------
   // Logging
@@ -53,13 +54,31 @@
     const callBox = document.querySelector(CONFIG.CALL_BOX_SELECTOR);
 
     if (callBox && !hasExpanded) {
+      // Call box just appeared — cancel any pending reset and auto-expand
+      if (callEndTimer) {
+        clearTimeout(callEndTimer);
+        callEndTimer = null;
+      }
       log('Call box detected, expanding after ' + CONFIG.CLICK_DELAY + 'ms');
       setTimeout(expandCallBox, CONFIG.CLICK_DELAY);
     }
 
     if (!callBox && hasExpanded) {
-      log('Call box removed — resetting for next call');
-      hasExpanded = false;
+      // Call box disappeared — but don't reset immediately.
+      // Minimizing the keypad can briefly remove .call-box from the DOM,
+      // so wait and confirm it's truly gone (call ended) before resetting.
+      if (!callEndTimer) {
+        log('Call box removed — confirming call ended...');
+        callEndTimer = setTimeout(function() {
+          callEndTimer = null;
+          if (!document.querySelector(CONFIG.CALL_BOX_SELECTOR)) {
+            log('Call confirmed ended — resetting for next call');
+            hasExpanded = false;
+          } else {
+            log('Call box reappeared — call still active, keeping expanded state');
+          }
+        }, 1500);
+      }
     }
   }
 
