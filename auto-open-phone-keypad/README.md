@@ -44,7 +44,7 @@ The script includes a `CONFIG` object at the top that you can adjust:
 1. **Store Event Listener** — Registers for `phoneCall` state changes via `AppUtils.StoreEvents` (GHL's built-in Custom JS API). When the phone call state changes, it checks if the collapsed call bar has appeared
 2. **DOM Observer (Fallback)** — A MutationObserver watches `#template-power-dialer` for child element changes. When `.call-box` (the collapsed call bar) is inserted, it triggers the auto-expand
 3. **Auto-Click** — After a short delay (configurable), the script finds the dropdown chevron inside `.call-actions` and programmatically clicks it, expanding the full dialer panel
-4. **Guard Flag** — A flag prevents the script from re-clicking if the panel is already expanded. The flag resets only after `.call-box` has been absent from the DOM for 1.5 seconds (confirming the call truly ended), so users can freely minimize the keypad during a call without it popping back open
+4. **Guard Flag** — A flag prevents the script from re-clicking if the panel is already expanded. The flag only resets when the entire `#template-power-dialer` container is empty for 2 seconds (confirming the call truly ended), so users can freely minimize the keypad via the Phone icon without it popping back open
 
 ## Compatibility
 
@@ -55,8 +55,11 @@ The script includes a `CONFIG` object at the top that you can adjust:
 
 ## Changelog
 
+### v1.2 — 2026-03-02
+- **Fix:** Keypad no longer re-opens when minimized via the Phone icon. The reset logic now checks whether the entire power dialer container is empty (call truly ended) rather than just whether `.call-box` is absent — since `.call-box` disappears normally when the keypad is expanded.
+
 ### v1.1 — 2026-03-02
-- **Fix:** Keypad can no longer get stuck re-opening after the user minimizes it. The script now waits 1.5s to confirm the call truly ended before resetting, preventing DOM flicker during minimize from triggering a re-expand.
+- **Fix (superseded by v1.2):** Added delayed reset to avoid DOM flicker during minimize.
 
 ### v1.0
 - Initial release — auto-opens the phone keypad when an outbound call starts.

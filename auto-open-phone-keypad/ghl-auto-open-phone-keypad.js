@@ -50,8 +50,13 @@
   // Detection: watch for .call-box appearing in the DOM
   // ---------------------------------------------------------------------------
 
+  function isCallActive() {
+    var container = document.querySelector(CONFIG.OBSERVER_TARGET);
+    return container && container.children.length > 0;
+  }
+
   function handleMutation() {
-    const callBox = document.querySelector(CONFIG.CALL_BOX_SELECTOR);
+    var callBox = document.querySelector(CONFIG.CALL_BOX_SELECTOR);
 
     if (callBox && !hasExpanded) {
       // Call box just appeared — cancel any pending reset and auto-expand
@@ -61,23 +66,30 @@
       }
       log('Call box detected, expanding after ' + CONFIG.CLICK_DELAY + 'ms');
       setTimeout(expandCallBox, CONFIG.CLICK_DELAY);
+      return;
     }
 
-    if (!callBox && hasExpanded) {
-      // Call box disappeared — but don't reset immediately.
-      // Minimizing the keypad can briefly remove .call-box from the DOM,
-      // so wait and confirm it's truly gone (call ended) before resetting.
-      if (!callEndTimer) {
-        log('Call box removed — confirming call ended...');
-        callEndTimer = setTimeout(function() {
-          callEndTimer = null;
-          if (!document.querySelector(CONFIG.CALL_BOX_SELECTOR)) {
-            log('Call confirmed ended — resetting for next call');
-            hasExpanded = false;
-          } else {
-            log('Call box reappeared — call still active, keeping expanded state');
-          }
-        }, 1500);
+    // Only reset hasExpanded when the call truly ended — i.e. the entire
+    // power dialer container is empty, not just when .call-box is absent.
+    // When the keypad is expanded, .call-box is gone but the expanded panel
+    // is still in the container. When the user minimizes via Phone icon,
+    // .call-box comes back. In both cases the call is still active.
+    if (hasExpanded) {
+      if (!isCallActive()) {
+        if (!callEndTimer) {
+          log('Power dialer empty — confirming call ended...');
+          callEndTimer = setTimeout(function() {
+            callEndTimer = null;
+            if (!isCallActive()) {
+              log('Call confirmed ended — resetting for next call');
+              hasExpanded = false;
+            }
+          }, 2000);
+        }
+      } else if (callEndTimer) {
+        // Call still active, cancel any pending reset
+        clearTimeout(callEndTimer);
+        callEndTimer = null;
       }
     }
   }
