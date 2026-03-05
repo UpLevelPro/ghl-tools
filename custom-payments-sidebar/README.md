@@ -2,7 +2,7 @@
 
 I was frustrated that GHL's Payments sidebar on contact detail pages shows sections I never use (Subscriptions, Estimates) and doesn't link to Recurring Invoices. Finding a contact's recurring invoice schedule meant navigating to the Recurring Templates page and manually searching by name.
 
-This script customizes the Payments sidebar: hide unused sections, reorder the ones you keep, and add a "Recurring Invoices" link that opens the Recurring Templates page pre-filtered by the contact's last name.
+This script customizes the Payments sidebar: hide unused sections, reorder the ones you keep, and add a "Recurring Invoices" link that opens the Recurring Templates page pre-filtered by the contact's name.
 
 If you found this helpful, let me know at eric@uplevelpro.com
 
@@ -28,7 +28,7 @@ That's it. The script applies automatically to all sub-accounts across your agen
 
 - **Hides unused sidebar sections** — Subscriptions, Estimates, or any combination you configure
 - **Reorders remaining sections** — Puts them in the order you want (e.g., Invoices before Transactions)
-- **Adds a "Recurring Invoices" link** — Opens the Recurring Templates page in a new tab, pre-filtered by the contact's last name
+- **Adds a "Recurring Invoices" link** — Opens the Recurring Templates page in a new tab, pre-filtered by the contact's name
 - **Auto-fills the search box** — When the Recurring Templates page opens with the search hash, the search box is automatically populated and the table filters to show only that contact's recurring invoices
 - **Survives SPA navigation** — Works when clicking between contacts, re-applies when GHL re-renders the sidebar
 - **Location filtering** — Optionally restrict to specific sub-accounts by location ID
@@ -93,14 +93,14 @@ SECTION_ORDER: ['Transactions', 'Invoices'],
 ### Contact Detail Page (`/contacts/detail/{contactId}`)
 
 1. **Section Hiding** — Finds each sidebar section by its `<p>` header text (e.g., "Subscriptions") and hides the parent `.mt-3` container
-2. **Recurring Invoices Link** — Creates a new section matching the native GHL sidebar structure with a link to `/payments/recurring-templates#search=LastName`. The last name is read from the contact's form fields in the left sidebar
+2. **Recurring Invoices Link** — Creates a new section matching the native GHL sidebar structure with a link to `/payments/recurring-templates#search=ContactName`. The contact name is read from the Contact Details header in the left sidebar
 3. **Section Reordering** — Moves the injected section to the top (after the stats row), then reorders native sections per `SECTION_ORDER`
-4. **MutationObserver** — Watches for GHL DOM re-renders and re-applies hiding, insertion, and reordering as needed
+4. **MutationObserver** — Always active; watches for GHL DOM re-renders and re-applies hiding, insertion, and reordering as needed (including after SPA navigation)
 5. **URL Watcher** — Polls for SPA navigation changes and rebuilds the section when switching contacts
 
 ### Recurring Templates Page (`/payments/recurring-templates`)
 
-1. **Hash Detection** — Reads `#search=LastName` from the URL hash
+1. **Hash Detection** — Reads `#search=ContactName` from the URL hash
 2. **Search Auto-Fill** — Uses the native `HTMLInputElement` value setter to bypass Vue's reactivity wrapper, then dispatches `input` and `compositionend` events to trigger Naive UI's search filtering
 3. **Hash Cleanup** — Removes the hash from the URL via `history.replaceState` so it doesn't persist on reload
 

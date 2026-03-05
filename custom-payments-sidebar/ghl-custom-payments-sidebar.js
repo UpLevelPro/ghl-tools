@@ -76,23 +76,13 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Contact detail page: read contact last name
+  // Contact detail page: read contact name
   // ---------------------------------------------------------------------------
 
-  function getContactLastName() {
-    var labels = document.querySelectorAll('label');
-    for (var i = 0; i < labels.length; i++) {
-      var spans = labels[i].querySelectorAll('div, span');
-      for (var j = 0; j < spans.length; j++) {
-        if (spans[j].textContent.trim() === 'Last Name') {
-          var form = labels[i].closest('form');
-          var input = form ? form.querySelector('input') : null;
-          if (input && input.value && input.value !== '--') {
-            return input.value.trim();
-          }
-          return null;
-        }
-      }
+  function getContactName() {
+    var nameEl = document.querySelector('p.hr-text-lg.hr-text-semibold.text-gray-900.text-wrap');
+    if (nameEl && nameEl.textContent.trim()) {
+      return nameEl.textContent.trim();
     }
     return null;
   }
@@ -203,9 +193,9 @@
   function getRecurringLink() {
     var locationId = getLocationIdFromUrl();
     var linkHref = '/v2/location/' + locationId + '/payments/recurring-templates';
-    var lastName = getContactLastName();
-    if (lastName) {
-      linkHref += '#search=' + encodeURIComponent(lastName);
+    var contactName = getContactName();
+    if (contactName) {
+      linkHref += '#search=' + encodeURIComponent(contactName);
     }
     return linkHref;
   }
@@ -409,9 +399,10 @@
       return;
     }
 
+    setupObserver();
+
     if (isContactDetailPage()) {
       setTimeout(applyContactPage, 1500);
-      setupObserver();
     } else if (isRecurringTemplatesPage()) {
       applyRecurringTemplatesPage();
     }
