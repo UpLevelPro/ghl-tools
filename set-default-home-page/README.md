@@ -56,7 +56,17 @@ var LOCATIONS = {
 | Settings | `/settings` |
 | Custom Menu Link | `/custom-menu-link/{uuid}` |
 
-To find a Custom Menu Link's UUID, open the link in a subaccount and check the URL — it will end with `/custom-menu-link/{uuid}`. Alternatively, inspect the sidebar in DevTools and look for the `meta` attribute on the menu link's `<a>` tag.
+### Finding a Custom Menu Link UUID
+
+1. Open any subaccount that has the Custom Menu Link installed
+2. Click the menu item in the left sidebar
+3. Look at the URL in your browser's address bar — it will look like:
+   ```
+   https://app.gohighlevel.com/v2/location/abc123/custom-menu-link/04d855d6-0ead-4963-a8a7-6f84dddbc4be
+   ```
+4. The UUID is the last segment after `/custom-menu-link/` — copy that value
+
+Use it in the config as `/custom-menu-link/{uuid}`.
 
 ## How It Works
 
