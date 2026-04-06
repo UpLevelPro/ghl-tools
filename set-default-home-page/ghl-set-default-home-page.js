@@ -43,7 +43,7 @@
 (function () {
   // --- CONFIG: locationId → default page path ---
   var LOCATIONS = {
-    '38Kk1ddkT2p2k0NfKkuS': '/custom-menu-link/04d855d6-0ead-4963-a8a7-6f84dddbc4be',
+    'YOUR_LOCATION_ID': '/custom-menu-link/your-custom-menu-uuid',
     // Add more locations here:
     // 'locationId': '/conversations',
     // 'locationId': '/opportunities',
