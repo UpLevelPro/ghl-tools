@@ -3,7 +3,7 @@
 (function() {
   'use strict';
 
-  var SCRIPT_VERSION = 'v12';
+  var SCRIPT_VERSION = 'v12.7';
   console.log('[AutoOpen Keypad] Version ' + SCRIPT_VERSION + ' loaded');
 
   const CONFIG = {
@@ -23,7 +23,6 @@
 
   let hasExpanded = false;
   let expandPending = false;
-  let lastClickInsideDialer = false;
   let observer = null;
   let callEndTimer = null;
 
@@ -74,27 +73,22 @@
   // ---------------------------------------------------------------------------
 
   function isCallActive() {
-    return !!document.querySelector(CONFIG.CALL_BOX_SELECTOR)
-      || !!document.querySelector(CONFIG.VOICE_CALLING_SELECTOR);
+    // Collapsed: .call-box visible
+    if (document.querySelector(CONFIG.CALL_BOX_SELECTOR)) return true;
+    // Expanded: End Call button visible means call is in progress
+    var dialer = document.querySelector('.dialer');
+    if (dialer && dialer.querySelector('.hr-button--error-type')) return true;
+    return false;
   }
 
   function handleMutation() {
-    var callDetected = !!document.querySelector(CONFIG.CALL_BOX_SELECTOR)
-      || !!document.querySelector(CONFIG.VOICE_CALLING_SELECTOR);
+    var callDetected = !!document.querySelector(CONFIG.CALL_BOX_SELECTOR);
 
     if (callDetected && !hasExpanded && !expandPending) {
       if (callEndTimer) { clearTimeout(callEndTimer); callEndTimer = null; }
       expandPending = true;
       log('Call detected, expanding after ' + CONFIG.CLICK_DELAY + 'ms');
       setTimeout(expandCallBox, CONFIG.CLICK_DELAY);
-      return;
-    }
-
-    // Re-open if dialer was collapsed by click-outside (not by user clicking phone icon)
-    if (hasExpanded && callDetected && !lastClickInsideDialer && !expandPending) {
-      expandPending = true;
-      log('Dialer collapsed by click-outside — re-opening');
-      setTimeout(expandCallBox, 50);
       return;
     }
 
@@ -254,6 +248,12 @@
         injectDispoCheckbox(container);
         updateDoneButtonState();
       }
+      // Periodic reset check: if hasExpanded but no call indicators remain, reset
+      if (hasExpanded && !isCallActive() && !document.querySelector(CONFIG.END_CALL_CONTAINER)) {
+        log('Call ended (periodic check) — resetting for next call');
+        hasExpanded = false;
+        expandPending = false;
+      }
     }, 300);
   }
 
@@ -261,25 +261,57 @@
   // Bootstrap
   // ---------------------------------------------------------------------------
 
-  function setupClickTracker() {
-    document.addEventListener('pointerdown', function(e) {
-      var dialer = document.querySelector(CONFIG.OBSERVER_TARGET);
-      lastClickInsideDialer = dialer ? dialer.contains(e.target) : false;
-    }, true);
-    log('Click tracker installed');
+  // ---------------------------------------------------------------------------
+  // Click-outside prevention: block GHL's click-outside-to-close on the dialer
+  // ---------------------------------------------------------------------------
+
+  function hasActiveCallPanel() {
+    // Only true when the .dialer panel is showing an active call (End Call button visible)
+    var dialer = document.querySelector('.dialer');
+    return !!dialer && !!dialer.querySelector('.hr-button--error-type');
+  }
+
+  function isInsideDialer(target) {
+    var observer = document.querySelector(CONFIG.OBSERVER_TARGET);
+    var panel = document.querySelector('.dialer');
+    return (observer && observer.contains(target)) || (panel && panel.contains(target));
+  }
+
+  function setupClickOutsideBlocker() {
+    var __skipNext = false;
+
+    ['pointerdown', 'focusin'].forEach(function(evtType) {
+      window.addEventListener(evtType, function(e) {
+        if (__skipNext) { __skipNext = false; return; }
+        if (!hasActiveCallPanel()) return;
+        if (isInsideDialer(e.target)) return;
+
+        e.stopImmediatePropagation();
+
+        // Let the click still reach the target element via a deferred .click()
+        if (evtType === 'pointerdown') {
+          var target = e.target;
+          setTimeout(function() {
+            __skipNext = true;
+            target.click();
+          }, 10);
+        }
+      }, true);
+    });
+    log('Click-outside blocker installed');
   }
 
   function bootstrap() {
     log('Loaded — auto-expand + click-outside protection + disposition enforcement');
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', function() {
-        setupClickTracker();
+        setupClickOutsideBlocker();
         setupStoreEvents();
         startObserver();
         startDispoEnforcement();
       });
     } else {
-      setupClickTracker();
+      setupClickOutsideBlocker();
       setupStoreEvents();
       startObserver();
       startDispoEnforcement();
