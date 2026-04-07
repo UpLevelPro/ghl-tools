@@ -70,9 +70,9 @@ Use it in the config as `/custom-menu-link/{uuid}`.
 
 ## How It Works
 
-1. **Runs before Vue Router** — GHL's Custom JS executes before the Vue SPA router initializes. At that moment, the browser pathname is still the raw base URL (`/v2/location/{id}`) with no route suffix
-2. **Regex match** — The script checks if the pathname matches `/v2/location/{id}` with no trailing path (just an optional `/`). This means it only fires on initial page loads, not SPA navigation
-3. **Instant redirect** — `window.location.replace()` fires synchronously, sending the browser to the configured page before Dashboard ever renders. Using `replace` (not `assign`) keeps the browser history clean — hitting Back won't loop through Dashboard
+1. **Runs on full page loads only** — GHL's Custom JS executes on full page loads, not on SPA sidebar clicks. This means clicking "Dashboard" in the sidebar will still work normally
+2. **Regex match** — The script matches both the base URL (`/v2/location/{id}`) and the dashboard path (`/v2/location/{id}/dashboard`). The base URL is hit on direct navigation; the dashboard path is hit on post-login redirects
+3. **SPA navigation** — Instead of `window.location.replace()` (which causes a full page reload and can disrupt post-login auth state), the script waits for the sidebar to render, then clicks the target menu link. This triggers Vue Router's SPA navigation, keeping the auth session intact
 
 ## Compatibility
 
@@ -82,6 +82,11 @@ Use it in the config as `/custom-menu-link/{uuid}`.
 - No CSS required
 
 ## Changelog
+
+### v1.2 — 2026-04-07
+- Fix: poll for pathname instead of checking synchronously — after login, GHL loads at `/` then Vue Router transitions to `/dashboard` via SPA
+- Fix: use `dispatchEvent(new MouseEvent(...))` instead of `.click()` — GHL sidebar links use `href="javascript:void(0)"` and Vue event delegation, so native `.click()` doesn't trigger navigation
+- Fix: match `/dashboard` path in addition to base URL
 
 ### v1.0 — 2026-04-06
 - Initial release — configurable per-location default home page redirect
