@@ -13,6 +13,10 @@ Free, open-source scripts and utilities to enhance your [HighLevel (GHL)](https:
 
 Each tool has its own folder with a dedicated README containing installation instructions, configuration options, and usage details.
 
+## Reference Docs
+
+- [Custom Menu Links API](./docs/custom-menus.md) — endpoints, response shapes, undocumented PUT field rejections, agency auth options, and Custom JS sidebar manipulation gotchas
+
 ## Installation
 
 All tools in this repo are designed to be pasted into **GHL Agency Settings > Whitelabel > Custom JS**. See each tool's README for specific instructions.
