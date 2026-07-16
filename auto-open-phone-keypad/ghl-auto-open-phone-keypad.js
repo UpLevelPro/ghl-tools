@@ -1,170 +1,153 @@
-<!-- GHL Auto-Open Phone Keypad v12 by Eric Langley - UpLevelPro.com -->
+<!-- GHL Auto-Open Phone Keypad v13 by Eric Langley - UpLevelPro.com -->
 <script>
 (function() {
   'use strict';
 
-  var SCRIPT_VERSION = 'v12.7';
+  // Guard against double-injection (GHL can re-inject Whitelabel Custom JS on
+  // navigation; stacking observers/handlers is what made v12 misbehave).
+  if (window.__ghlAutoOpenKeypadLoaded) return;
+  window.__ghlAutoOpenKeypadLoaded = true;
+
+  var SCRIPT_VERSION = 'v13.0';
   console.log('[AutoOpen Keypad] Version ' + SCRIPT_VERSION + ' loaded');
 
-  const CONFIG = {
-    CALL_BOX_SELECTOR: '.call-box',
-    VOICE_CALLING_SELECTOR: '#template-power-dialer button[aria-label="Voice Calling"]',
-    CHEVRON_SELECTOR: '.call-actions > div:last-child',
-    OBSERVER_TARGET: '#template-power-dialer',
-    CLICK_DELAY: 300,
-    DEBUG: true,
-    REQUIRE_DISPO_KEY: 'ghl-require-disposition',
-    DONE_BUTTON_SELECTOR: 'button.end-call-btn',
-    END_CALL_CONTAINER: '.end-call-container',
+  // ---------------------------------------------------------------------------
+  // CONFIG — selectors verified against GHL's Vue 3 DOM (2026-07-16)
+  // ---------------------------------------------------------------------------
+  //
+  // The Vue 3 migration restructured the dialer. Verified facts:
+  //  - The collapsed call bar is `.call-box`, and it ONLY exists during a live
+  //    call. Inside it lives `.call-actions` with two `.cursor-pointer` icons:
+  //      1) the red hang-up   (svg.text-error-500)
+  //      2) the expand chevron (the other cursor-pointer)
+  //  - `#template-power-dialer` is now just the persistent "Voice Calling"
+  //    LAUNCHER icon in the header. Clicking it OPENS/STARTS a call. v12 clicked
+  //    it as a fallback when the old chevron selector missed — that is what
+  //    popped spurious "Call Results" windows. v13 never touches the launcher.
+  //  - The `phoneCall` / `manualCallStatus` StoreEvents never fire for call
+  //    activity in this build, so v12's store subscription was dead weight and
+  //    has been removed. Detection is pure DOM.
+  //
+  var CONFIG = {
+    CALL_BOX:         '.call-box',                         // collapsed call bar (live call only)
+    CALL_ACTIONS:     '.call-actions',                     // action-icon row inside .call-box
+    HANGUP_SVG:       '.call-actions svg.text-error-500',  // red hang-up = proof of a genuine call
+    ACTIVE_END_CALL:  '.dialer .hr-button--error-type',    // End Call button in the expanded panel
+    END_CALL_CONTAINER: '.end-call-container',             // disposition / "Call Results" panel
+    DONE_BUTTON:      'button.end-call-btn',               // the "Done" button on that panel
+    // Disposition-enforcement (secondary feature) — verify if GHL changes the panel:
+    REQUIRE_DISPO_KEY:  'ghl-require-disposition',
     DISPO_SELECTED_CLASS: 'bg-primary-50',
-    DISPO_PILL_SELECTOR: 'div.cursor-pointer.rounded-md.border',
-    MORE_DISPO_SELECTOR: '.more-dispositions .hr-select'
+    DISPO_PILL_SELECTOR:  'div.cursor-pointer.rounded-md.border',
+    MORE_DISPO_SELECTOR:  '.more-dispositions .hr-select',
+    RESET_CONFIRM_MS: 1500,
+    DEBUG: true
   };
 
-  let hasExpanded = false;
-  let expandPending = false;
-  let observer = null;
-  let callEndTimer = null;
-
-  // ---------------------------------------------------------------------------
-  // Logging
-  // ---------------------------------------------------------------------------
-
-  function log(...args) {
-    if (CONFIG.DEBUG) console.log('[AutoOpen Keypad]', ...args);
+  function log() {
+    if (CONFIG.DEBUG) console.log.apply(console, ['[AutoOpen Keypad]'].concat([].slice.call(arguments)));
   }
 
   // ---------------------------------------------------------------------------
-  // Core: find the chevron on the collapsed call bar and click it
+  // Detection helpers
   // ---------------------------------------------------------------------------
 
-  function clickElement(el) {
+  // Returns the collapsed call bar ONLY when it represents a genuine live call
+  // (i.e. it contains the red hang-up icon). This is the guard that prevents us
+  // from ever acting on the idle launcher or a stale/phantom element.
+  function getLiveCallBar() {
+    var box = document.querySelector(CONFIG.CALL_BOX);
+    if (!box) return null;
+    if (!box.querySelector(CONFIG.HANGUP_SVG)) return null;
+    return box;
+  }
+
+  // The expand chevron is the .cursor-pointer inside .call-actions that is NOT
+  // the red hang-up. Returns null if not found — in which case we do NOTHING
+  // (no dangerous fallback).
+  function getExpandChevron(box) {
+    var actions = box.querySelector(CONFIG.CALL_ACTIONS);
+    if (!actions) return null;
+    var items = actions.querySelectorAll(':scope > div.cursor-pointer');
+    for (var i = 0; i < items.length; i++) {
+      if (!items[i].querySelector('svg.text-error-500')) return items[i];
+    }
+    return null;
+  }
+
+  // Is a call currently in progress in ANY form (collapsed bar, expanded panel,
+  // or the post-call disposition panel)? Used to know when to reset.
+  function isCallInProgress() {
+    return !!getLiveCallBar()
+        || !!document.querySelector(CONFIG.ACTIVE_END_CALL)
+        || !!document.querySelector(CONFIG.END_CALL_CONTAINER);
+  }
+
+  function clickEl(el) {
     el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   }
 
-  function expandCallBox() {
-    expandPending = false;
-
-    // Try old-style chevron first
-    var chevron = document.querySelector(CONFIG.CHEVRON_SELECTOR);
-    if (chevron) {
-      log('Expanding via chevron...');
-      hasExpanded = true;
-      clickElement(chevron);
-      log('Chevron clicked — dialer panel should be open');
-      return;
-    }
-
-    // Fallback: new-style Voice Calling button
-    var voiceBtn = document.querySelector(CONFIG.VOICE_CALLING_SELECTOR);
-    if (voiceBtn) {
-      log('Expanding via Voice Calling button...');
-      hasExpanded = true;
-      clickElement(voiceBtn);
-      log('Voice Calling button clicked — dialer panel should be open');
-      return;
-    }
-
-    log('No chevron or Voice Calling button found');
-  }
-
   // ---------------------------------------------------------------------------
-  // Detection
+  // Core: auto-expand the collapsed keypad exactly once per call
   // ---------------------------------------------------------------------------
 
-  function isCallActive() {
-    // Collapsed: .call-box visible
-    if (document.querySelector(CONFIG.CALL_BOX_SELECTOR)) return true;
-    // Expanded: End Call button visible means call is in progress
-    var dialer = document.querySelector('.dialer');
-    if (dialer && dialer.querySelector('.hr-button--error-type')) return true;
-    return false;
-  }
+  var expandedThisCall = false;
+  var resetTimer = null;
 
-  function handleMutation() {
-    var callDetected = !!document.querySelector(CONFIG.CALL_BOX_SELECTOR);
+  function evaluate() {
+    var bar = getLiveCallBar();
 
-    if (callDetected && !hasExpanded && !expandPending) {
-      if (callEndTimer) { clearTimeout(callEndTimer); callEndTimer = null; }
-      expandPending = true;
-      log('Call detected, expanding after ' + CONFIG.CLICK_DELAY + 'ms');
-      setTimeout(expandCallBox, CONFIG.CLICK_DELAY);
+    // 1) Fresh live call, collapsed, not yet expanded -> expand via the chevron.
+    if (bar && !expandedThisCall) {
+      var chevron = getExpandChevron(bar);
+      if (chevron) {
+        expandedThisCall = true;               // set BEFORE click so re-fires don't double-click
+        log('Live call bar detected — expanding via chevron');
+        clickEl(chevron);
+      } else {
+        log('Live call bar detected but no chevron found — leaving as-is (no fallback)');
+      }
       return;
     }
 
-    if (hasExpanded) {
-      if (!isCallActive() && !document.querySelector(CONFIG.END_CALL_CONTAINER)) {
-        if (!callEndTimer) {
-          log('Power dialer empty — confirming call ended...');
-          callEndTimer = setTimeout(function() {
-            callEndTimer = null;
-            if (!isCallActive() && !document.querySelector(CONFIG.END_CALL_CONTAINER)) {
-              log('Call confirmed ended — resetting for next call');
-              hasExpanded = false;
+    // 2) User expanded manually (bar gone, End Call visible in the panel).
+    //    Mark as handled so we honor a later manual minimize without re-opening.
+    if (!bar && !expandedThisCall && document.querySelector(CONFIG.ACTIVE_END_CALL)) {
+      expandedThisCall = true;
+      return;
+    }
+
+    // 3) Reset only when the call is FULLY over (bar + panel + disposition all
+    //    gone) for RESET_CONFIRM_MS. This preserves v1.2 behavior: minimizing
+    //    the keypad mid-call must NOT trigger a re-open.
+    if (expandedThisCall) {
+      if (!isCallInProgress()) {
+        if (!resetTimer) {
+          resetTimer = setTimeout(function () {
+            resetTimer = null;
+            if (!isCallInProgress()) {
+              expandedThisCall = false;
+              log('Call ended — reset for next call');
             }
-          }, 2000);
+          }, CONFIG.RESET_CONFIRM_MS);
         }
-      } else if (callEndTimer) {
-        clearTimeout(callEndTimer);
-        callEndTimer = null;
+      } else if (resetTimer) {
+        clearTimeout(resetTimer);
+        resetTimer = null;
       }
     }
   }
 
   // ---------------------------------------------------------------------------
-  // MutationObserver — watches #template-power-dialer for call-box appearance
-  // ---------------------------------------------------------------------------
-
-  function startObserver() {
-    const target = document.querySelector(CONFIG.OBSERVER_TARGET);
-    if (!target) {
-      log('Observer target not found, retrying in 2s');
-      setTimeout(startObserver, 2000);
-      return;
-    }
-    if (observer) return;
-
-    let debounceTimer = null;
-    observer = new MutationObserver(function() {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(handleMutation, 50);
-    });
-    observer.observe(target, { childList: true, subtree: true });
-    log('Observer started on ' + CONFIG.OBSERVER_TARGET);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Store events
-  // ---------------------------------------------------------------------------
-
-  function setupStoreEvents() {
-    if (typeof AppUtils === 'undefined' || !AppUtils.StoreEvents) {
-      log('AppUtils.StoreEvents not available, using observer only');
-      return;
-    }
-    try {
-      AppUtils.StoreEvents.register(['phoneCall'], function(event) {
-        log('phoneCall store event:', event);
-        setTimeout(handleMutation, CONFIG.CLICK_DELAY);
-      });
-      log('Registered phoneCall store events');
-    } catch (e) {
-      log('Failed to register store events:', e.message);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Disposition Requirement
+  // Disposition requirement (optional): block "Done" until a disposition is set
   // ---------------------------------------------------------------------------
 
   function isDispoRequired() {
     return localStorage.getItem(CONFIG.REQUIRE_DISPO_KEY) === 'true';
   }
-
   function setDispoRequired(val) {
     localStorage.setItem(CONFIG.REQUIRE_DISPO_KEY, val ? 'true' : 'false');
   }
-
   function isDispositionSelected() {
     var container = document.querySelector(CONFIG.END_CALL_CONTAINER);
     if (!container) return false;
@@ -179,9 +162,8 @@
     }
     return false;
   }
-
   function updateDoneButtonState() {
-    var btn = document.querySelector(CONFIG.DONE_BUTTON_SELECTOR);
+    var btn = document.querySelector(CONFIG.DONE_BUTTON);
     if (!btn) return;
     if (isDispoRequired() && !isDispositionSelected()) {
       btn.disabled = true;
@@ -195,7 +177,6 @@
       btn.title = '';
     }
   }
-
   function injectVersionBadge(container) {
     if (!container || container.querySelector('#ghl-autoopen-version')) return;
     var badge = document.createElement('div');
@@ -206,10 +187,9 @@
     container.style.position = container.style.position || 'relative';
     container.appendChild(badge);
   }
-
   function injectDispoCheckbox(container) {
     if (!container || container.querySelector('#ghl-require-dispo-toggle')) return;
-    var doneBtn = container.querySelector('button.end-call-btn');
+    var doneBtn = container.querySelector(CONFIG.DONE_BUTTON);
     if (!doneBtn) return;
     var btnWrapper = doneBtn.closest('.call-btn-container');
     if (!btnWrapper) return;
@@ -224,35 +204,69 @@
     cb.type = 'checkbox';
     cb.checked = isDispoRequired();
     cb.style.cssText = 'cursor:pointer;width:15px;height:15px;accent-color:#4f46e5;';
-    cb.addEventListener('change', function() {
+    cb.addEventListener('change', function () {
       setDispoRequired(cb.checked);
       updateDoneButtonState();
       log('Require disposition toggled:', cb.checked);
     });
-    var label = document.createTextNode('Require disposition before Done');
     wrapper.appendChild(cb);
-    wrapper.appendChild(label);
+    wrapper.appendChild(document.createTextNode('Require disposition before Done'));
     btnWrapper.parentNode.insertBefore(wrapper, btnWrapper);
     log('Disposition checkbox injected');
     updateDoneButtonState();
   }
 
   // ---------------------------------------------------------------------------
-  // Periodic: inject checkbox + enforce Done button state
+  // Click-outside guard: keep GHL from closing the dialer when the rep clicks
+  // elsewhere DURING an active call. Strictly gated on a genuine active call.
   // ---------------------------------------------------------------------------
 
+  function hasActiveCallPanel() {
+    return !!document.querySelector(CONFIG.ACTIVE_END_CALL);
+  }
+  function isInsideDialer(target) {
+    var panel = document.querySelector('.dialer');
+    var box = document.querySelector(CONFIG.CALL_BOX);
+    return (panel && panel.contains(target)) || (box && box.contains(target));
+  }
+  function setupClickOutsideBlocker() {
+    var skipNext = false;
+    ['pointerdown', 'focusin'].forEach(function (evtType) {
+      window.addEventListener(evtType, function (e) {
+        if (skipNext) { skipNext = false; return; }
+        if (!hasActiveCallPanel()) return;
+        if (isInsideDialer(e.target)) return;
+        e.stopImmediatePropagation();
+        if (evtType === 'pointerdown') {
+          var target = e.target;
+          setTimeout(function () { skipNext = true; target.click(); }, 10);
+        }
+      }, true);
+    });
+    log('Click-outside blocker installed');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Observation: one debounced MutationObserver on <body> + a light periodic
+  // sweep for the disposition panel. Cheap handlers (a few querySelectors).
+  // ---------------------------------------------------------------------------
+
+  function startObserver() {
+    var debounce = null;
+    var observer = new MutationObserver(function () {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(evaluate, 50);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    log('Observer started on <body>');
+  }
+
   function startDispoEnforcement() {
-    setInterval(function() {
+    setInterval(function () {
       var container = document.querySelector(CONFIG.END_CALL_CONTAINER);
       if (container) {
         injectDispoCheckbox(container);
         updateDoneButtonState();
-      }
-      // Periodic reset check: if hasExpanded but no call indicators remain, reset
-      if (hasExpanded && !isCallActive() && !document.querySelector(CONFIG.END_CALL_CONTAINER)) {
-        log('Call ended (periodic check) — resetting for next call');
-        hasExpanded = false;
-        expandPending = false;
       }
     }, 300);
   }
@@ -261,65 +275,20 @@
   // Bootstrap
   // ---------------------------------------------------------------------------
 
-  // ---------------------------------------------------------------------------
-  // Click-outside prevention: block GHL's click-outside-to-close on the dialer
-  // ---------------------------------------------------------------------------
-
-  function hasActiveCallPanel() {
-    // Only true when the .dialer panel is showing an active call (End Call button visible)
-    var dialer = document.querySelector('.dialer');
-    return !!dialer && !!dialer.querySelector('.hr-button--error-type');
-  }
-
-  function isInsideDialer(target) {
-    var observer = document.querySelector(CONFIG.OBSERVER_TARGET);
-    var panel = document.querySelector('.dialer');
-    return (observer && observer.contains(target)) || (panel && panel.contains(target));
-  }
-
-  function setupClickOutsideBlocker() {
-    var __skipNext = false;
-
-    ['pointerdown', 'focusin'].forEach(function(evtType) {
-      window.addEventListener(evtType, function(e) {
-        if (__skipNext) { __skipNext = false; return; }
-        if (!hasActiveCallPanel()) return;
-        if (isInsideDialer(e.target)) return;
-
-        e.stopImmediatePropagation();
-
-        // Let the click still reach the target element via a deferred .click()
-        if (evtType === 'pointerdown') {
-          var target = e.target;
-          setTimeout(function() {
-            __skipNext = true;
-            target.click();
-          }, 10);
-        }
-      }, true);
-    });
-    log('Click-outside blocker installed');
-  }
-
   function bootstrap() {
-    log('Loaded — auto-expand + click-outside protection + disposition enforcement');
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', function() {
-        setupClickOutsideBlocker();
-        setupStoreEvents();
-        startObserver();
-        startDispoEnforcement();
-      });
-    } else {
-      setupClickOutsideBlocker();
-      setupStoreEvents();
-      startObserver();
-      startDispoEnforcement();
-    }
+    log('Loaded — Vue 3 auto-expand + click-outside protection + disposition enforcement');
+    setupClickOutsideBlocker();
+    startObserver();
+    startDispoEnforcement();
+    evaluate();
   }
 
-  bootstrap();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrap);
+  } else {
+    bootstrap();
+  }
 
 })();
 </script>
-<!-- End - GHL Auto-Open Phone Keypad v12 by Eric Langley - UpLevelPro.com -->
+<!-- End - GHL Auto-Open Phone Keypad v13 by Eric Langley - UpLevelPro.com -->

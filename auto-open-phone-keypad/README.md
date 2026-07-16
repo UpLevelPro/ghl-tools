@@ -39,12 +39,15 @@ The script includes a `CONFIG` object at the top that you can adjust:
 | `CLICK_DELAY` | `300` | Milliseconds to wait after detecting a call before clicking the chevron (gives DOM time to settle) |
 | `DEBUG` | `true` | Set to `false` to disable `[AutoOpen Keypad]` console logging |
 
-## How It Works
+## How It Works (v13, GHL Vue 3)
 
-1. **Store Event Listener** — Registers for `phoneCall` state changes via `AppUtils.StoreEvents` (GHL's built-in Custom JS API). When the phone call state changes, it checks if the collapsed call bar has appeared
-2. **DOM Observer (Fallback)** — A MutationObserver watches `#template-power-dialer` for child element changes. When `.call-box` (the collapsed call bar) is inserted, it triggers the auto-expand
-3. **Auto-Click** — After a short delay (configurable), the script finds the dropdown chevron inside `.call-actions` and programmatically clicks it, expanding the full dialer panel
-4. **Guard Flag** — A flag prevents the script from re-clicking if the panel is already expanded. The flag only resets when the entire `#template-power-dialer` container is empty for 2 seconds (confirming the call truly ended), so users can freely minimize the keypad via the Phone icon without it popping back open
+1. **DOM Observer** — A debounced MutationObserver watches `<body>`. On each change it re-evaluates the dialer state with cheap `querySelector` checks
+2. **Genuine-call detection** — A call is only considered live when the collapsed call bar (`.call-box`) is present **and** contains the red hang-up icon (`.call-actions svg.text-error-500`). This is what keeps the script inert at idle and stops it from ever acting on GHL's persistent header launcher
+3. **Auto-Click the chevron** — The expand control is the `.cursor-pointer` inside `.call-actions` that is *not* the red hang-up. The script clicks it (via `dispatchEvent(new MouseEvent('click', { bubbles: true }))`) to open the full keypad. If no chevron is found it does **nothing** — there is no launcher fallback (that fallback caused spurious call windows after GHL's Vue 3 migration)
+4. **Guard Flag** — `expandedThisCall` prevents re-clicking and only resets when the call is fully over (no call bar, no End Call button, no disposition panel) for 1.5s — so minimizing the keypad mid-call never re-opens it
+5. **Double-injection guard** — `window.__ghlAutoOpenKeypadLoaded` ensures re-injected Custom JS can't stack observers/handlers
+
+> **Note:** GHL's `AppUtils.StoreEvents` (`phoneCall` / `manualCallStatus`) do **not** fire for call activity in the current Vue 3 build, so v13 uses pure DOM detection.
 
 ## Compatibility
 
@@ -54,6 +57,14 @@ The script includes a `CONFIG` object at the top that you can adjust:
 - No CSS required
 
 ## Changelog
+
+### v13.0 — 2026-07-16
+- **Fix: spurious "Call Results" windows after GHL's Vue 3 migration.** v12 fell back to clicking the header "Voice Calling" launcher (which *starts* a call) whenever its chevron selector missed — popping dialer/Call Results windows with no call made. v13 detects a genuine call via the red hang-up icon, expands only via the in-bar chevron, and **removes the launcher fallback entirely** (fail-safe: no chevron → do nothing).
+- **Removed** the dead `phoneCall`/`manualCallStatus` `StoreEvents` subscription (never fires in Vue 3).
+- **Added** a double-injection guard so re-injected Custom JS can't stack observers.
+- Re-gated click-outside protection and disposition enforcement on the verified active-call signal.
+- Verified live against the agency's Vue 3 DOM (detection inert at idle; chevron-click expands the panel).
+- _Note: changelog jumps from v1.2 to v13.0 — interim v2–v12 iterations were tracked in the repo `DEVLOG.md`, not here._
 
 ### v1.2 — 2026-03-02
 - **Fix:** Keypad no longer re-opens when minimized via the Phone icon. The reset logic now checks whether the entire power dialer container is empty (call truly ended) rather than just whether `.call-box` is absent — since `.call-box` disappears normally when the keypad is expanded.

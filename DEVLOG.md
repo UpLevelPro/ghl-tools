@@ -50,6 +50,27 @@ handle.
 
 - Key files: `docs/custom-menus.md`
 
+## 2026-07-16
+
+### Auto-Open Phone Keypad v13.0 — Vue 3 rewrite (fixes spurious "Call Results" windows)
+
+**Problem:** After GHL's Vue 3 migration, spurious "Call Results" / dialer windows popped up when no call had been made (reported: user switched browser tabs and it appeared). Root cause traced live in the agency (co-driven Chrome, DOM + store instrumentation):
+
+- The v12 chevron selector `.call-actions > div:last-child` matched nothing at the moment `expandCallBox()` ran, so it fell through to its fallback and **programmatically clicked `#template-power-dialer button[aria-label="Voice Calling"]`** — which in Vue 3 is the persistent header LAUNCHER that *opens/starts* a call. Captured the offending synthetic click (`isTrusted:false` on "Voice Calling"). The opened panel was then re-detected and re-clicked → spurious-window loop.
+- The `phoneCall` / `manualCallStatus` `StoreEvents` subscriptions **never fired** for call activity in this build — dead weight, and a latent re-trigger risk.
+
+**Verified Vue 3 DOM reality:** `.call-box` (collapsed bar) exists only during a live call and contains `.call-actions` with two `.cursor-pointer` icons — the red hang-up (`svg.text-error-500`) and the expand chevron. Live-clicked the chevron via automation and confirmed it expands the panel (`.call-box` transitions away). Confirmed v13's predicates are fully **inert at idle**.
+
+**v13 changes:**
+- **Detect genuine calls only** via `.call-box .call-actions svg.text-error-500` (real hang-up present) — never the idle launcher.
+- **Expand by clicking the chevron** (the `.call-actions > .cursor-pointer` without the red svg). **Removed the "Voice Calling" launcher fallback entirely** — if no chevron, do nothing (fail-safe).
+- **Removed the dead `phoneCall`/`manualCallStatus` StoreEvents subscription.**
+- **Added a double-injection guard** (`window.__ghlAutoOpenKeypadLoaded`) so re-injection can't stack observers/handlers.
+- Preserved the disposition-enforcement toggle, version badge, and click-outside protection — all re-gated on the verified active-call signal. (Disposition-pill selectors carried over from v12 and flagged for re-verification against the live panel.)
+- Reset only when call is fully over (no bar/panel/disposition) for 1.5s — preserves the v1.2 "don't re-open on manual minimize" behavior.
+
+- Key files: `auto-open-phone-keypad/ghl-auto-open-phone-keypad.js`
+
 ## 2026-04-07
 
 ### Auto-Open Phone Keypad v12.7
