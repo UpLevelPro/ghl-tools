@@ -43,10 +43,10 @@ Added:
 Kept the flexbox reorder recipe and the three redirect gotchas, with the
 delegation claim in gotcha 2 corrected.
 
-Sourced from what `uplevelpro-app/ghl-custom-scripts/location-config.js` learned
-across v2.3–v2.8, plus a live verification pass on the Contacts smart list
-(2026-08-31) that established the capture-phase interception and the
-`#add-contact-btn` handle.
+Sourced from what our internal plan-driven Custom JS learned across its v2.3–v2.8
+releases, plus a live verification pass on the Contacts smart list (2026-08-31)
+that established the capture-phase interception and the `#add-contact-btn`
+handle.
 
 - Key files: `docs/custom-menus.md`
 
