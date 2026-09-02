@@ -1,5 +1,28 @@
 # Dev Log
 
+## 2026-09-02
+
+### Rep Call Diagnostic — console tool for capturing dialer failures in the field
+
+**Why:** Murphy OS reps reported two issues — (1) incoming calls could not be answered, the Answer button appearing to do nothing, and (2) a call disposition could not be set afterwards. Neither reproduced across ~10 instrumented test calls on our own machines. Interviews then surfaced the likely reason: **two different incoming-call UIs are appearing, varying by user** (the alternate one described as "blue and white with blue buttons"), which is the signature of a GHL A/B test or staged rollout rather than a settings difference. One rep sees the variant constantly and *can* answer; a second sees it occasionally and *cannot*; a third has never seen it.
+
+`auto-open-phone-keypad/rep-call-diagnostic.js` is a read-only, paste-into-DevTools diagnostic for capturing the failure on the affected rep's own machine, since we cannot reproduce it on ours. After reproducing, the rep runs `murphyReport()`, which prints a report and copies it to the clipboard.
+
+Captures: microphone permission state and audio-device counts, `getUserMedia` outcomes, WebRTC connection-state transitions, whether auto-expand fired per call, whether the disposition panel opened **and whether `.dialer` was actually visible when it did**, Done-button disabled state, pointer events swallowed by the injected click-outside blocker, and synthetic clicks. It observes only — it never clicks and never mutates GHL state.
+
+**v13 behaviour verified live during the investigation:**
+
+- **Auto-expand works and is load-bearing.** `.call-box` appears and is expanded by the script within ~85ms (synthetic click on the non-red `.cursor-pointer`, stack `clickEl <= evaluate`). With the script removed from Custom JS, the same collapsed bar persists ~13.8s with `.dialer` hidden until clicked manually.
+- **Inbound calls never involve `.call-box`.** They render `.incoming-call-info-section` and `.incoming-call-bt-ctrl` inside `.dialer > .dialer-body`, and both action buttons carry `hr-button--primary`. The script's outbound-oriented detection is inert during an inbound ring.
+- **Disposition detection is correct on both paths** — pill selection (`.bg-primary-50`) and the More Dispositions dropdown (`.hr-base-selection` text change) — verified against the real DOM, not a mock.
+- **Server-side disposition pipeline is healthy:** 244 webhooks over 30 days, zero validation failures. GHL has not changed the `phoneCall.*` customData contract.
+
+**Known defect, not yet fixed (for a future v14):** `setupClickOutsideBlocker()` calls `stopImmediatePropagation()` and then attempts to replay the click via a deferred `target.click()`. That replay is broken two ways — `SVGElement.prototype.click` is `undefined`, so it throws whenever the target is an icon `<svg>`/`<path>`; and `HTMLElement.click()` fires only `click`, never `pointerdown`/`mousedown`. A third issue: `skipNext` is a single closure variable shared by both the `pointerdown` and `focusin` listeners, and the replayed click never emits a `pointerdown` to consume it, so the flag leaks to the next event. The blocker does arm on every live call, so these are reachable.
+
+**Measurement lesson worth recording:** two conclusions during this investigation were confidently wrong because the sampler was slower than the state being measured. `.call-box` lives ~85ms and the disposition checkbox injects on a 300ms interval, while sampling ran at 100–150ms — and in one case a single snapshot. Absence of observation got written up as observation of absence, with the script under test being the thing deleting the state. Background tabs compound it: Chrome throttles timers to ~1/sec. Hence this tool polls at 50ms and warns explicitly to keep the tab in the foreground. Establish a positive control — reproduce with the script removed to confirm the state exists and how long it lives — before trusting any negative result.
+
+- Key files: `auto-open-phone-keypad/rep-call-diagnostic.js`
+
 ## 2026-08-31
 
 ### docs/custom-menus.md § 7 rewritten for the Vue 3 shell
